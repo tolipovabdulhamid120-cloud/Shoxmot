@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>3D Shaxmat — Telegram Mini App</title>
+
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Chess.js (Shaxmat qoidalari dvigateli) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+  <!-- Three.js uchun Import Map -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #f8fafc;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Yuqori boshqaruv paneli */
+    .top-ui {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .mode-bar, .status-card {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 6px;
+      display: flex;
+      gap: 6px;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .mode-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      padding: 8px 6px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-btn.active {
+      background: #3b82f6;
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
+    }
+
+    .status-card {
+      padding: 10px 14px;
+    }
+
+    .status-text {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+
+    .badge-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .score-pill {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(234, 179, 8, 0.18);
+      color: #fde047;
+      border: 1px solid rgba(234, 179, 8, 0.4);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    /* Pastki tugmalar paneli */
+    .bottom-ui {
+      position: absolute;
+      bottom: 18px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .action-btn {
+      pointer-events: auto;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(10px);
+      color: #f8fafc;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.15s, background 0.2s;
+    }
+
+    .action-btn:active {
+      transform: scale(0.95);
+    }
+
+    .action-btn.primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-color: #3b82f6;
+    }
+
+    .action-btn.gold {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      border-color: #f59e0b;
+    }
+
+    /* Reyting jadvali modali (Leaderboard) */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.78);
+      backdrop-filter: blur(6px);
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-width: 400px;
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      max-height: 82vh;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: #cbd5e1;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .leaderboard-list {
+      margin-top: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .leader-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .leader-item.me {
+      background: rgba(37, 99, 235, 0.22);
+      border-color: rgba(59, 130, 246, 0.5);
+    }
+
+    .leader-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .rank-num {
+      width: 26px;
+      font-weight: 800;
+      font-size: 14px;
+      text-align: center;
+      color: #94a3b8;
+    }
+
+    .leader-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+
+    .leader-sub {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .leader-score {
+      font-size: 14px;
+      font-weight: 800;
+      color: #fde047;
+      background: rgba(234, 179, 8, 0.14);
+      padding: 4px 10px;
+      border-radius: 10px;
+    }
+
+    .modal-footer-note {
+      margin-top: 12px;
+      font-size: 11.5px;
+      color: #94a3b8;
+      text-align: center;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Yuqori interfeys -->
+  <div class="top-ui">
+    <div class="mode-bar">
+      <button class="mode-btn active" id="btn-mode-bot">🤖 Bot bilan</button>
+      <button class="mode-btn" id="btn-mode-local">👥 2 Kishi</button>
+      <button class="mode-btn" id="btn-mode-online">🌐 Onlayn</button>
+    </div>
+
+    <div class="status-card">
+      <span class="status-text" id="status-text">Oqlar navbati (Sizning yurishingiz)</span>
+      <div class="badge-group">
+        <span class="score-pill" id="my-score-pill">⭐ 0</span>
+        <span class="badge" id="turn-badge">Oqlar ♔</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3D Sahna -->
+  <div id="canvas-container"></div>
+
+  <!-- Pastki boshqaruv tugmalari -->
+  <div class="bottom-ui">
+    <button class="action-btn" id="btn-reset">🔄 Yangi</button>
+    <button class="action-btn" id="btn-camera">🎥 Kamera</button>
+    <button class="action-btn gold" id="btn-leaderboard">🏆 Reyting</button>
+    <button class="action-btn primary hidden" id="btn-invite">📨 Chaqirish</button>
+  </div>
+
+  <!-- Top-10 Reyting jadvali Modali -->
+  <div class="modal-overlay hidden" id="leaderboard-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">🏆 Top-10 Grossmeysterlar</div>
+        <button class="close-btn" id="btn-close-modal">✕</button>
+      </div>
+      <div class="leaderboard-list" id="leaderboard-list"></div>
+      <div class="modal-footer-note">
+        Onlayn gʻalaba: <b>+25 ball</b> | Bot ustidan gʻalaba: <b>+10 ball</b> | Durang: <b>+5 ball</b>
+      </div>
+    </div>
+  </div>
+
+  <!-- Asosiy 3D, AI, Reyting va Firebase moduli -->
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getDatabase,
+      ref,
+      set,
+      update,
+      onValue,
+      get,
+      onDisconnect,
+      query,
+      orderByChild,
+      limitToLast
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+    }
+
+    const currentUser = tg?.initDataUnsafe?.user || {
+      id: Number(localStorage.getItem("chess_guest_id")) || Math.floor(Math.random() * 900000) + 100000,
+      first_name: "O'yinchi"
+    };
+    localStorage.setItem("chess_guest_id", currentUser.id);
+
+    // Sizning Firebase sozlamalaringiz to'g'ridan-to'g'ri kiritildi:
+    const firebaseConfig = {
+      apiKey: "AIzaSyCAO-cSSx9g-3Z0RLQuhDEBRXeS8I8qK1Y",
+      authDomain: "shoxmot-afdb1.firebaseapp.com",
+      databaseURL: "https://shoxmot-afdb1-default-rtdb.firebaseio.com",
+      projectId: "shoxmot-afdb1",
+      storageBucket: "shoxmot-afdb1.firebasestorage.app",
+      messagingSenderId: "907262791122",
+      appId: "1:907262791122:web:c1a9bb78390d8868af4c0b",
+      measurementId: "G-KDZK1M5DCY"
+    };
+
+    const BOT_USERNAME = "SizningBotingiz_bot"; // @ belgisiz bot yozing
+    const APP_SHORT_NAME = "chess"; // BotFather dagi qisqa nom
+
+    let db = null;
+    try {
+      const app = initializeApp(firebaseConfig);
+      db = getDatabase(app);
+    } catch (e) {
+      console.warn("Firebase ulanish xatosi:", e);
+    }
+
+    function haptic(type = "light") {
+      if (!tg?.HapticFeedback) return;
+      if (type === "error" || type === "success" || type === "warning") {
+        tg.HapticFeedback.notificationOccurred(type);
+      } else {
+        tg.HapticFeedback.impactOccurred(type);
+      }
+    }
+
+    const chess = new Chess();
+    let gameMode = "bot";
+    let myColor = "w";
+    let selectedSquare = null;
+    let validMoves = [];
+    let currentRoomId = null;
+    let isBotThinking = false;
+    let rewardProcessed = false;
+
+    const statusTextEl = document.getElementById("status-text");
+    const turnBadgeEl = document.getElementById("turn-badge");
+    const myScorePillEl = document.getElementById("my-score-pill");
+    const btnInvite = document.getElementById("btn-invite");
+    const leaderboardModal = document.getElementById("leaderboard-modal");
+    const leaderboardListEl = document.getElementById("leaderboard-list");
+
+    async function loadMyScoreBadge() {
+      const localStats = JSON.parse(localStorage.getItem("chess_my_stats") || '{"score":0,"wins":0}');
+      myScorePillEl.textContent = `⭐ ${localStats.score}`;
+
+      if (db) {
+        try {
+          const userSnap = await get(ref(db, `leaderboard/${currentUser.id}`));
+          if (userSnap.exists()) {
+            const data = userSnap.val();
+            myScorePillEl.textContent = `⭐ ${data.score || 0}`;
+            localStorage.setItem("chess_my_stats", JSON.stringify(data));
+          }
+        } catch (e) {
+          console.warn("Ballni o'qishda xatolik:", e);
+        }
+      }
+    }
+
+    async function addPlayerScore(pointsToAdd, isWin = false) {
+      const localStats = JSON.parse(localStorage.getItem("chess_my_stats") || '{"score":0,"wins":0,"games":0}');
+      const newScore = (localStats.score || 0) + pointsToAdd;
+      const newWins = (localStats.wins || 0) + (isWin ? 1 : 0);
+      const newGames = (localStats.games || 0) + 1;
+
+      const updatedData = {
+        id: currentUser.id,
+        name: currentUser.first_name || "O'yinchi",
+        score: newScore,
+        wins: newWins,
+        games: newGames,
+        updatedAt: Date.now()
+      };
+
+      localStorage.setItem("chess_my_stats", JSON.stringify(updatedData));
+      myScorePillEl.textContent = `⭐ ${newScore}`;
+
+      if (db) {
+        try {
+          const userRef = ref(db, `leaderboard/${currentUser.id}`);
+          const snap = await get(userRef);
+          const currentRemote = snap.exists() ? snap.val() : { score: 0, wins: 0, games: 0 };
+
+          const finalData = {
+            id: currentUser.id,
+            name: currentUser.first_name || "O'yinchi",
+            score: (currentRemote.score || 0) + pointsToAdd,
+            wins: (currentRemote.wins || 0) + (isWin ? 1 : 0),
+            games: (currentRemote.games || 0) + 1,
+            updatedAt: Date.now()
+          };
+
+          await set(userRef, finalData);
+          myScorePillEl.textContent = `⭐ ${finalData.score}`;
+        } catch (e) {
+          console.warn("Firebase reyting yozishda xato:", e);
+        }
+      }
+    }
+
+    async function openLeaderboardModal() {
+      haptic("light");
+      leaderboardModal.classList.remove("hidden");
+      leaderboardListEl.innerHTML = `<div style="text-align:center; padding: 20px; color:#94a3b8;">Yuklanmoqda...</div>`;
+
+      let players = [];
+      if (db) {
+        try {
+          const topQuery = query(ref(db, "leaderboard"), orderByChild("score"), limitToLast(10));
+          const snap = await get(topQuery);
+          if (snap.exists()) {
+            snap.forEach((child) => { players.push(child.val()); });
+            players.sort((a, b) => (b.score || 0) - (a.score || 0));
+          }
+        } catch (e) {
+          console.warn("Reyting yuklash xatosi:", e);
+        }
+      }
+
+      if (players.length === 0) {
+        const localStats = JSON.parse(localStorage.getItem("chess_my_stats") || '{"score":0,"wins":0,"games":0}');
+        players.push({
+          id: currentUser.id,
+          name: currentUser.first_name || "Siz",
+          score: localStats.score || 0,
+          wins: localStats.wins || 0,
+          games: localStats.games || 0
+        });
+      }
+
+      renderLeaderboardItems(players);
+    }
+
+    function renderLeaderboardItems(players) {
+      leaderboardListEl.innerHTML = "";
+      const medals = ["🥇", "🥈", "🥉"];
+
+      players.forEach((p, idx) => {
+        const isMe = String(p.id) === String(currentUser.id);
+        const rankLabel = idx < 3 ? medals[idx] : `${idx + 1}`;
+        const row = document.createElement("div");
+        row.className = `leader-item ${isMe ? "me" : ""}`;
+
+        row.innerHTML = `
+          <div class="leader-left">
+            <div class="rank-num">${rankLabel}</div>
+            <div>
+              <div class="leader-name">${escapeHtml(p.name || "O'yinchi")} ${isMe ? "(Siz)" : ""}</div>
+              <div class="leader-sub">Gʻalaba: ${p.wins || 0} ta • Oʻyinlar: ${p.games || 0} ta</div>
+            </div>
+          </div>
+          <div class="leader-score">⭐ ${p.score || 0}</div>
+        `;
+        leaderboardListEl.appendChild(row);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (m) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[m]));
+    }
+
+    const container = document.getElementById("canvas-container");
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 9.5, 9.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.enablePan = false;
+    controls.minDistance = 6;
+    controls.maxDistance = 18;
+    controls.maxPolarAngle = Math.PI / 2.15;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.3);
+    dirLight.position.set(6, 14, 8);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const boardGroup = new THREE.Group();
+    const piecesGroup = new THREE.Group();
+    const highlightsGroup = new THREE.Group();
+    scene.add(boardGroup, piecesGroup, highlightsGroup);
+
+    const squareMeshes = {};
+    const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
+
+    const frameMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(8.8, 0.4, 8.8),
+      new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.6 })
+    );
+    frameMesh.position.y = -0.22;
+    boardGroup.add(frameMesh);
+
+    const lightSqMat = new THREE.MeshStandardMaterial({ color: 0xeeddcc, roughness: 0.4 });
+    const darkSqMat = new THREE.MeshStandardMaterial({ color: 0x7c4d3a, roughness: 0.5 });
+    const sqGeo = new THREE.BoxGeometry(1, 0.15, 1);
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const isLight = (r + c) % 2 === 0;
+        const sqMesh = new THREE.Mesh(sqGeo, isLight ? lightSqMat.clone() : darkSqMat.clone());
+        sqMesh.position.set(c - 3.5, 0, r - 3.5);
+        const squareName = `${files[c]}${8 - r}`;
+        sqMesh.userData = { square: squareName, isLight };
+        squareMeshes[squareName] = sqMesh;
+        boardGroup.add(sqMesh);
+      }
+    }
+
+    const whitePieceMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25 });
+    const blackPieceMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3 });
+
+    function create3DPieceMesh(type, color) {
+      const group = new THREE.Group();
+      const mat = color === "w" ? whitePieceMat : blackPieceMat;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.4, 0.14, 24), mat);
+      base.position.y = 0.07;
+      group.add(base);
+
+      if (type === "p") {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.28, 0.45, 20), mat);
+        body.position.y = 0.35;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 20), mat);
+        head.position.y = 0.68;
+        group.add(body, head);
+      } else if (type === "r") {
+        const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 0.55, 20), mat);
+        tower.position.y = 0.42;
+        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.18, 12), mat);
+        top.position.y = 0.78;
+        group.add(tower, top);
+      } else if (type === "n") {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.45, 20), mat);
+        body.position.y = 0.36;
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.42, 0.38), mat);
+        head.position.set(0, 0.72, color === "w" ? -0.06 : 0.06);
+        head.rotation.x = color === "w" ? 0.35 : -0.35;
+        group.add(body, head);
+      } else if (type === "b") {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.29, 0.62, 20), mat);
+        body.position.y = 0.45;
+        const mitre = new THREE.Mesh(new THREE.SphereGeometry(0.21, 20, 20), mat);
+        mitre.scale.set(1, 1.35, 1);
+        mitre.position.y = 0.85;
+        group.add(body, mitre);
+      } else if (type === "q") {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.32, 0.75, 24), mat);
+        body.position.y = 0.52;
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.18, 0.2, 16), mat);
+        crown.position.y = 0.98;
+        group.add(body, crown);
+      } else if (type === "k") {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.33, 0.82, 24), mat);
+        body.position.y = 0.55;
+        const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.08), mat);
+        crossV.position.y = 1.24;
+        group.add(body, crossV);
+      }
+      return group;
+    }
+
+    function renderBoardPieces() {
+      while (piecesGroup.children.length > 0) {
+        piecesGroup.remove(piecesGroup.children[0]);
+      }
+      const board = chess.board();
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const piece = board[r][c];
+          if (piece) {
+            const squareName = `${files[c]}${8 - r}`;
+            const mesh = create3DPieceMesh(piece.type, piece.color);
+            mesh.position.set(c - 3.5, 0.075, r - 3.5);
+            mesh.traverse((child) => { child.userData = { square: squareName }; });
+            mesh.userData = { square: squareName };
+            piecesGroup.add(mesh);
+          }
+        }
+      }
+      updateUIStatus();
+    }
+
+    function renderHighlights() {
+      while (highlightsGroup.children.length > 0) {
+        highlightsGroup.remove(highlightsGroup.children[0]);
+      }
+      if (selectedSquare && squareMeshes[selectedSquare]) {
+        const pos = squareMeshes[selectedSquare].position;
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.32, 0.45, 24),
+          new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(pos.x, 0.09, pos.z);
+        highlightsGroup.add(ring);
+      }
+      validMoves.forEach((move) => {
+        const targetSq = squareMeshes[move.to];
+        if (!targetSq) return;
+        const dot = new THREE.Mesh(
+          new THREE.CircleGeometry(0.18, 20),
+          new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide })
+        );
+        dot.rotation.x = -Math.PI / 2;
+        dot.position.set(targetSq.position.x, 0.09, targetSq.position.z);
+        highlightsGroup.add(dot);
+      });
+    }
+
+    function alignCameraToColor(color) {
+      const zPos = color === "w" ? 9.5 : -9.5;
+      camera.position.set(0, 9.5, zPos);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    const pieceValues = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    function evaluateBoard(game) {
+      let total = 0;
+      const b = game.board();
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = b[r][c];
+          if (p) {
+            const val = pieceValues[p.type];
+            total += p.color === "b" ? val : -val;
+          }
+        }
+      }
+      return total;
+    }
+
+    function makeSmartBotMove() {
+      if (chess.game_over()) return;
+      isBotThinking = true;
+      updateUIStatus();
+
+      setTimeout(() => {
+        const moves = chess.moves({ verbose: true });
+        if (moves.length === 0) return;
+        let bestMove = moves[0];
+        let bestScore = -Infinity;
+
+        for (const move of moves) {
+          chess.move(move);
+          const score = evaluateBoard(chess) + Math.random() * 5;
+          chess.undo();
+          if (score > bestScore) {
+            bestScore = score;
+            bestMove = move;
+          }
+        }
+        chess.move(bestMove);
+        isBotThinking = false;
+        haptic("light");
+        renderBoardPieces();
+      }, 400);
+    }
+
+    async function createOnlineRoom() {
+      if (!db) return;
+      currentRoomId = "room_" + Math.random().toString(36).substring(2, 8);
+      myColor = "w";
+      rewardProcessed = false;
+      chess.reset();
+      alignCameraToColor("w");
+      renderBoardPieces();
+
+      const roomRef = ref(db, `rooms/${currentRoomId}`);
+      await set(roomRef, {
+        status: "waiting",
+        turn: "w",
+        fen: chess.fen(),
+        white: { id: currentUser.id, name: currentUser.first_name },
+        black: null
+      });
+
+      onDisconnect(roomRef).update({ status: "abandoned" });
+      listenToFirebaseRoom(currentRoomId);
+      shareTelegramInvite(currentRoomId);
+    }
+
+    function shareTelegramInvite(roomId) {
+      const inviteLink = `https://t.me/${BOT_USERNAME}/${APP_SHORT_NAME}?startapp=${roomId}`;
+      const text = `Mening 3D shaxmat xonamga kir! Kuchimizni sinab ko'ramiz ♟`;
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`);
+      }
+    }
+
+    async function joinOnlineRoom(roomId) {
+      if (!db) return;
+      setModeUI("online");
+      currentRoomId = roomId;
+      rewardProcessed = false;
+
+      const roomRef = ref(db, `rooms/${roomId}`);
+      const snap = await get(roomRef);
+      if (!snap.exists()) return;
+
+      const data = snap.val();
+      if (data.white?.id === currentUser.id) {
+        myColor = "w";
+      } else {
+        myColor = "b";
+        await update(roomRef, {
+          black: { id: currentUser.id, name: currentUser.first_name },
+          status: "playing"
+        });
+      }
+      alignCameraToColor(myColor);
+      listenToFirebaseRoom(roomId);
+    }
+
+    function listenToFirebaseRoom(roomId) {
+      onValue(ref(db, `rooms/${roomId}`), (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+        if (data.fen && data.fen !== chess.fen()) {
+          chess.load(data.fen);
+          selectedSquare = null;
+          validMoves = [];
+          renderHighlights();
+          renderBoardPieces();
+          haptic("medium");
+        }
+        if (data.status === "waiting") {
+          statusTextEl.textContent = "Doʻstingiz ulanishi kutilmoqda...";
+        } else {
+          updateUIStatus();
+        }
+      });
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let pointerDownPos = { x: 0, y: 0 };
+
+    renderer.domElement.addEventListener("pointerdown", (e) => {
+      pointerDownPos = { x: e.clientX, y: e.clientY };
+    });
+
+    renderer.domElement.addEventListener("pointerup", (e) => {
+      if (Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y) > 6) return;
+      pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const intersects = raycaster.intersectObjects([...piecesGroup.children, ...boardGroup.children], true);
+      for (const hit of intersects) {
+        const sq = hit.object.userData?.square;
+        if (sq) { handleSquareTap(sq); break; }
+      }
+    });
+
+    async function handleSquareTap(square) {
+      if (chess.game_over() || isBotThinking) return;
+      const currentTurn = chess.turn();
+      if (gameMode === "bot" && currentTurn !== "w") return;
+      if (gameMode === "online" && currentTurn !== myColor) { haptic("error"); return; }
+
+      const chosenMove = validMoves.find((m) => m.to === square);
+      if (selectedSquare && chosenMove) {
+        chess.move({ from: selectedSquare, to: square, promotion: "q" });
+        selectedSquare = null;
+        validMoves = [];
+        haptic("medium");
+        renderHighlights();
+        renderBoardPieces();
+
+        if (gameMode === "bot" && !chess.game_over()) {
+          makeSmartBotMove();
+        } else if (gameMode === "online" && db && currentRoomId) {
+          await update(ref(db, `rooms/${currentRoomId}`), { fen: chess.fen(), turn: chess.turn() });
+        }
+        return;
+      }
+
+      const pieceOnSq = chess.get(square);
+      if (pieceOnSq && pieceOnSq.color === currentTurn) {
+        selectedSquare = square;
+        validMoves = chess.moves({ square, verbose: true });
+        haptic("light");
+      } else {
+        selectedSquare = null;
+        validMoves = [];
+      }
+      renderHighlights();
+    }
+
+    function updateUIStatus() {
+      const turn = chess.turn();
+      turnBadgeEl.textContent = turn === "w" ? "Oqlar ♔" : "Qoralar ♚";
+
+      if (chess.in_checkmate()) {
+        const winnerColor = turn === "w" ? "b" : "w";
+        if (!rewardProcessed) {
+          rewardProcessed = true;
+          if (gameMode === "bot" && winnerColor === "w") {
+            addPlayerScore(10, true);
+            statusTextEl.textContent = "MOT! Siz yutdingiz! (+10 ⭐)";
+          } else if (gameMode === "online" && winnerColor === myColor) {
+            addPlayerScore(25, true);
+            statusTextEl.textContent = "MOT! Gʻalaba! (+25 ⭐)";
+          } else {
+            statusTextEl.textContent = "Oʻyin yakunlandi!";
+          }
+        }
+        return;
+      }
+      if (chess.in_draw() && !rewardProcessed) {
+        rewardProcessed = true;
+        addPlayerScore(5, false);
+        statusTextEl.textContent = "Durang! (+5 ⭐)";
+        return;
+      }
+
+      if (gameMode === "bot") {
+        statusTextEl.textContent = isBotThinking ? "Bot oʻylamoqda..." : "Sizning navbatingiz";
+      } else if (gameMode === "online") {
+        statusTextEl.textContent = turn === myColor ? "Sizning navbatingiz!" : "Raqib oʻylamoqda...";
+      } else {
+        statusTextEl.textContent = turn === "w" ? "Oqlar yurishi" : "Qoralar yurishi";
+      }
+    }
+
+    function setModeUI(mode) {
+      gameMode = mode;
+      document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+      document.getElementById(`btn-mode-${mode}`).classList.add("active");
+      if (mode === "online") btnInvite.classList.remove("hidden");
+      else btnInvite.classList.add("hidden");
+
+      selectedSquare = null;
+      validMoves = [];
+      rewardProcessed = false;
+      chess.reset();
+      myColor = "w";
+      alignCameraToColor("w");
+      renderHighlights();
+      renderBoardPieces();
+    }
+
+    document.getElementById("btn-mode-bot").addEventListener("click", () => setModeUI("bot"));
+    document.getElementById("btn-mode-local").addEventListener("click", () => setModeUI("local"));
+    document.getElementById("btn-mode-online").addEventListener("click", () => { setModeUI("online"); createOnlineRoom(); });
+    document.getElementById("btn-reset").addEventListener("click", () => { chess.reset(); selectedSquare = null; validMoves = []; rewardProcessed = false; renderBoardPieces(); });
+    document.getElementById("btn-camera").addEventListener("click", () => alignCameraToColor(myColor));
+    document.getElementById("btn-leaderboard").addEventListener("click", openLeaderboardModal);
+    document.getElementById("btn-close-modal").addEventListener("click", () => leaderboardModal.classList.add("hidden"));
+    btnInvite.addEventListener("click", () => { if (currentRoomId) shareTelegramInvite(currentRoomId); else createOnlineRoom(); });
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    loadMyScoreBadge();
+    const startParam = tg?.initDataUnsafe?.start_param;
+    if (startParam && startParam.startsWith("room_")) {
+      joinOnlineRoom(startParam);
+    } else {
+      renderBoardPieces();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
